@@ -147,10 +147,34 @@ function serveMemory(req, res, entry) {
 }
 
 // ---------------------------------------------------------------------------
-// Regular disk serving (fallback when not in memory mode)
+// Regular disk serving (static asset cache and non-memory fallback)
 // ---------------------------------------------------------------------------
+const staticGzipCache = new Map(); // file -> gzip Buffer (kept in RAM)
+const COMPRESSIBLE = /\.(js|mjs|css|json|html|svg|txt)$/i;
+
+function acceptsGzip(req) {
+  return /\bgzip\b/i.test(req.headers['accept-encoding'] || '');
+}
+
 function sendFile(req, res, file, stat) {
   const type = MIME[path.extname(file)] || 'application/octet-stream';
+  if (compressData && acceptsGzip(req) && COMPRESSIBLE.test(file) && stat.size > 16 * 1024) {
+    let gz = staticGzipCache.get(file);
+    if (!gz) {
+      gz = zlib.gzipSync(fs.readFileSync(file), { level: 6 });
+      staticGzipCache.set(file, gz);
+    }
+    res.writeHead(200, {
+      'content-type': type,
+      'content-length': gz.length,
+      'content-encoding': 'gzip',
+      'cache-control': 'no-store',
+      ...CROSS_ORIGIN_ISOLATION,
+    });
+    res.end(gz);
+    if (req.method !== 'HEAD') countBytes(req.url, gz.length);
+    return;
+  }
   const headers = {
     'content-type': type,
     'content-length': stat.size,

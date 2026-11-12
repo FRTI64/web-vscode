@@ -1,0 +1,52 @@
+{
+  "measured_at": "2026-11-13T02:03:00+08:00",
+  "variant": "minimal OpenVSCode Server image -> container2wasm --to-js",
+  "github_actions": {
+    "ovs_image_run": "https://github.com/FRTI64/web-vscode/actions/runs/43266449140",
+    "c2w_run": "https://github.com/FRTI64/frti64_c2w/actions/runs/43266690998",
+    "artifact": "c2w-web-vscode-ovs-wasm",
+    "artifact_zip_bytes": 158542067,
+    "c2w_build_seconds": 2367,
+    "image_compressed_bytes": 111000000
+  },
+  "artifact": {
+    "data_bytes": 427962109,
+    "wasm_bytes": 41241461,
+    "out_js_bytes": 277613,
+    "data_zstd3_bytes": 129700000
+  },
+  "browser": {
+    "boot_ready_seconds": 105,
+    "iframe_workbench": {
+      "loaded": true,
+      "title": "Walkthrough: Setup VS Code Web - workspace - OpenVSCode Server",
+      "workbench": true,
+      "bodyLen": 108515
+    },
+    "first_load_wire_bytes": 168460609,
+    "first_load_wire_mib": 160.7,
+    "wire_breakdown_mib": {
+      "/qemu-system-x86_64.data": 141.3,
+      "/qemu-system-x86_64.wasm": 14.4,
+      "/stable-072586267e68ece9a47aa43f8c108e0dcbf44622/static/out/vs/code/browser/workbench/workbench.js": 3.5,
+      "/stable-072586267e68ece9a47aa43f8c108e0dcbf44622/static/out/vs/workbench/api/worker/extensionHostWorkerMain.js?vscode-coi=2": 0.4,
+      "/out.js": 0.3,
+      "/stable-072586267e68ece9a47aa43f8c108e0dcbf44622/static/out/nls.messages.js": 0.2,
+      "/stable-072586267e68ece9a47aa43f8c108e0dcbf44622/static/out/media/codicon.ttf?5d4d76ab2ce5108968ad644d591a16a6": 0.1,
+      "/stable-072586267e68ece9a47aa43f8c108e0dcbf44622/static/out/vs/code/browser/workbench/workbench.css": 0.1,
+      "/stable-072586267e68ece9a47aa43f8c108e0dcbf44622/static/out/vs/editor/common/services/editorWebWorkerMain.js?vscode-coi=3": 0.1,
+      "/vendor/xterm.js": 0.1
+    },
+    "console_errors": [
+      "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ]
+  },
+  "server": {
+    "mode": "in-memory + gzip wire compression",
+    "preloaded_mib": 448.1,
+    "wire_mib_after_gzip": 155.8,
+    "screenshot": "docs/ovs-wasm-page.png"
+  }
+}

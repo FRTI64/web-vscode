@@ -155,6 +155,10 @@ cd wasm-demo
 # 打开 http://localhost:8091/ ，首次引导约 8-10 分钟
 ```
 
+**精简版（推荐尝试）**：`wasm-openvscode/` + `wasm-demo/scripts/serve-openvscode.sh` 使用
+OpenVSCode Server 最小镜像并把产物全部放内存：实测 **启动 ~105-195 秒**、浏览器首载 **168.5 MB**（gzip 后），
+详见 [`wasm-demo/README.md`](wasm-demo/README.md)。
+
 已知限制：首次启动慢（全模拟 x86_64）、内存占用大、建议单用户/单标签页使用；详情与踩坑记录见
 [`wasm-demo/README.md`](wasm-demo/README.md)。
 

@@ -44,7 +44,32 @@ cd wasm-demo
 
 `MEMORY=0` / `COMPRESS_DATA=0` 可以关闭内存模式 / 压缩（用于对比）。
 
-> 实测数据（详见文末「测量记录」）：待补充。
+**实测（2026-11-13，Chrome 无头模式完整冷启动）**
+
+| 指标 | 根目录 `serve-web` 版 | 精简 OpenVSCode 版 |
+| --- | --- | --- |
+| wasm `.data` | 1.07 GB | **428 MB** |
+| Actions 产物 zip | 397 MB | **158.5 MB** |
+| 浏览器首载（gzip 传输 + 客户端静态资源） | ~1.1 GB（当时未压缩） | **160.7 MiB（168.5 MB）** |
+| 页面加载 → VS Code 就绪 | 541 s | **105 s**（另一次 195 s，受机器负载影响） |
+| 内嵌工作台可交互 | 就绪后 ~40-60 s | 就绪后 **~40 s** |
+| 运行内存 | `.data` 1.07 GB + guest RAM 1 GB | `.data` 428 MB + guest RAM 1 GB + 服务端 RAM 缓存 448 MB |
+
+启动 105 s 的构成：容器 entrypoint 日志 ~10-15 s（Debian + tini），OpenVSCode 的 node server 在
+QEMU 模拟的 x86_64 上启动约 90 s（对比微软 CLI 方案 ~500 s）。
+
+页面截图：[docs/ovs-wasm-page.png](docs/ovs-wasm-page.png)；原始测量数据：[docs/ovs-validation.json](docs/ovs-validation.json)。
+
+**关于「0.1 GB 级」**：当前首载 168.5 MB ≈ 0.17 GB（比原方案小 6.6 倍）。继续往 ~0.1-0.13 GB 压的现成路径：
+
+1. **zstd Content-Encoding + 预压缩缓存**：`.data` 从 gzip 141 MiB → zstd ~123 MiB（`zstd -3` 实测 129.7 MB，
+   `-19` 更小），首载可到 ~0.14 GB；
+2. **再瘦身镜像**（distroless 基础镜像 + 去掉内置扩展/客户端静态文件，这些改由宿主直出）：`.data` 可再减
+   40-80 MB，首载有望到 **~0.1-0.12 GB**；需要再重建一次（镜像 + c2w 转换，约 40-50 分钟）。
+
+> 全内存说明：服务端 `--memory` 把 448 MB 产物读入 Node 内存、`--compress-data` 在内存里 gzip；浏览器收到
+> 160 MB gzip 流后在内存解压，guest rootfs（428 MB）、可写目录 `/tmp`（HOME、VS Code 数据、工作区）全部在
+> wasm 内存中，不写磁盘/IndexedDB/OPFS。
 
 ## 架构
 
