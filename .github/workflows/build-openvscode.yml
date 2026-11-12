@@ -1,0 +1,119 @@
+# Build the minimal OpenVSCode Server image used for the WebAssembly demo.
+#
+# Unlike the main Dockerfile (Microsoft `code serve-web`, ~330 MB compressed),
+# this image is based on the OpenVSCode Server release tarball and the OS
+# packages it needs, with all writable state under /tmp. It exists to make the
+# container2wasm (`c2w --to-js`) guest as small as possible: smaller browser
+# download for the wasm image, less memory, and no Microsoft CLI wrapper in
+# front of the node server (faster startup under QEMU emulation).
+#
+# The image is pushed to ghcr.io/frti64/web-vscode-openvscode and smoke-tested
+# exactly like the main image (HTTP 200, VS Code workbench marker, uid 1000).
+name: build-openvscode-wasm-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wasm-openvscode/**"
+      - ".github/workflows/build-openvscode.yml"
+  pull_request:
+    paths:
+      - "wasm-openvscode/**"
+      - ".github/workflows/build-openvscode.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/frti64/web-vscode-openvscode
+
+jobs:
+  build:
+    name: Build, push and smoke-test minimal OpenVSCode image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./wasm-openvscode
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Smoke test image
+        id: smoke
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          PULL_IMAGE: ${{ github.event_name != 'pull_request' }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci-smoke.sh
+          ./scripts/ci-smoke.sh
+
+      - name: Image size
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          IMAGE_REF="$(printf '%s\n' "$IMAGE_TAGS" | head -n 1)"
+          docker image inspect --format '{{.Size}}' "$IMAGE_REF" | awk '{printf "image size: %.1f MiB\n", $1/1048576}' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Job summary
+        if: always()
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          SMOKE_RESULT: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          IMAGE_NAME="${IMAGE_NAME:-unknown/image}"
+          tags_flat="$(printf '%s\n' "${IMAGE_TAGS:-}" | sed '/^[[:space:]]*$/d' | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+          {
+            echo "## minimal OpenVSCode image (for container2wasm)"
+            echo ""
+            echo "| item | value |"
+            echo "| --- | --- |"
+            echo "| image | \`${IMAGE_NAME}\` |"
+            echo "| tags | ${tags_flat:-(not resolved)} |"
+            echo "| digest | ${IMAGE_DIGEST:-not pushed (pull_request build)} |"
+            echo "| smoke test | ${SMOKE_RESULT:-unknown} |"
+            echo "| run | [${GITHUB_RUN_ID:-0}](${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-unknown/unknown}/actions/runs/${GITHUB_RUN_ID:-0}) |"
+          } >> "$GITHUB_STEP_SUMMARY"

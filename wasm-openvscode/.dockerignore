@@ -1,0 +1,5 @@
+# Keep the docker build context minimal: only the Dockerfile and the
+# entrypoint are needed by the image build.
+*
+!Dockerfile
+!entrypoint.sh
