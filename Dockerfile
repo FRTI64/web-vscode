@@ -73,8 +73,10 @@ RUN set -eux; \
     install -m 0755 "$tmpdir/code" /usr/local/bin/code; \
     rm -rf "$tmpdir"; \
     chown -R coder:coder /home/coder /workspace /run/user/1000; \
-    HOME=/tmp VSCODE_CLI_DATA_DIR=/tmp/vscode-cli-check code --version | grep -Fxq "${VSCODE_VERSION}"; \
-    HOME=/tmp VSCODE_CLI_DATA_DIR=/tmp/vscode-cli-check code --version | grep -Fq "${VSCODE_COMMIT}"; \
+    cli_version="$(HOME=/tmp VSCODE_CLI_DATA_DIR=/tmp/vscode-cli-check code --version)"; \
+    printf 'VS Code CLI version output:\n%s\n' "$cli_version"; \
+    printf '%s\n' "$cli_version" | grep -Fq "${VSCODE_VERSION}"; \
+    printf '%s\n' "$cli_version" | grep -Fq "${VSCODE_COMMIT}"; \
     rm -rf /tmp/vscode-cli-check
 
 COPY --chown=coder:coder --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
