@@ -1,0 +1,6 @@
+# Keep the build context minimal: the image only needs the Dockerfile and the
+# entrypoint script. Everything else (docs, CI, scripts, local workspace,
+# runtime data) is irrelevant to `docker build` and only slows it down.
+*
+!Dockerfile
+!entrypoint.sh

@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# Local development / self-hosting for the web-vscode container image.
+#
+# Build from this checkout and start it:
+#   docker compose up --build -d      # or: docker compose up --build
+#   open http://localhost:8000
+#   docker compose down
+#
+# Use the image published by GitHub Actions instead of building locally:
+#   docker compose pull                # pulls ghcr.io/frti64/web-vscode:latest
+#   docker compose up --no-build       # runs the pulled image, skips the build
+#
+# If the GHCR package is not public, log in first:
+#   echo "$GITHUB_TOKEN" | docker login ghcr.io -u FRTI64 --password-stdin
+#
+# The image already bakes in VS Code and its web server, so the container
+# starts serving in a few seconds. Files placed in ./workspace show up in the
+# browser's file explorer as /workspace.
+# ---------------------------------------------------------------------------
+services:
+  web-vscode:
+    image: ghcr.io/frti64/web-vscode:latest
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspace:/workspace
+    environment:
+      # Bind address/port inside the container (the port mapping above must
+      # match PORT).
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      # Folder opened when the browser connects.
+      DEFAULT_FOLDER: "/workspace"
+      # Uncomment to require ?tkn=<token> (or a matching cookie) on every
+      # request. Leaving it unset runs with --without-connection-token, i.e.
+      # anyone who can reach the port has full access to /workspace.
+      # CONNECTION_TOKEN: "change-me"
+    restart: unless-stopped

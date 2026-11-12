@@ -1,0 +1,10 @@
+# local runtime data
+workspace/*
+!workspace/.gitkeep
+.local/
+
+# logs / caches
+*.log
+node_modules/
+__pycache__/
+.DS_Store
