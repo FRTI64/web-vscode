@@ -137,6 +137,27 @@ docker run --rm -p 8000:8000 \
   ghcr.io/frti64/web-vscode:latest
 ```
 
+
+## WebAssembly 版本：容器直接在浏览器里运行
+
+[`wasm-demo/`](wasm-demo/README.md) 提供了「把本镜像转成 WebAssembly、在浏览器里自动加载并访问其中的 VS Code」的完整方案：
+
+- 用 container2wasm 的 `c2w --to-js` 把 `ghcr.io/frti64/web-vscode:latest` 转成 `out.js` + QEMU wasm + 1.07 GB 的容器 rootfs 数据；
+- 一个自动加载页面在浏览器里启动这个 wasm 容器（x86_64 全模拟），容器里跑起 `code serve-web`；
+- 页面通过同源反向代理把容器中的 VS Code 工作台内嵌显示，也可以在新标签页打开 `http://localhost:18080/`。
+
+![VS Code running from a container emulated in WebAssembly](wasm-demo/docs/vscode-in-browser.png)
+
+```bash
+cd wasm-demo
+./scripts/fetch-static-cache.sh   # 可选但建议：VS Code Web 客户端静态资源（~270 MB），大幅加速加载
+./scripts/serve.sh                # 自动下载 GitHub Actions 里的 wasm 产物与 c2w-net
+# 打开 http://localhost:8091/ ，首次引导约 8-10 分钟
+```
+
+已知限制：首次启动慢（全模拟 x86_64）、内存占用大、建议单用户/单标签页使用；详情与踩坑记录见
+[`wasm-demo/README.md`](wasm-demo/README.md)。
+
 ## 目录结构
 
 ```text
@@ -150,6 +171,7 @@ docker run --rm -p 8000:8000 \
 │   ├── smoke-test.sh             # 轮询 serve-web 直到 workbench 可用
 │   └── ci-smoke.sh               # CI 中的容器冒烟测试脚本
 ├── docs/screenshot.png
+├── wasm-demo/                    # container2wasm：在浏览器里运行本镜像的 WebAssembly 版本
 └── workspace/                    # compose 挂载进容器的示例工作区
 ```
 
