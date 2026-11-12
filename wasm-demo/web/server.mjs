@@ -143,7 +143,7 @@ function serveMemory(req, res, entry) {
   }
   res.writeHead(200, headers);
   res.end(entry.buf);
-  countBytes(req.url, entry.buf.length);
+  if (req.method !== 'HEAD') countBytes(req.url, entry.buf.length);
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ function sendFile(req, res, file, stat) {
   };
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
-  countBytes(req.url, stat.size);
+  if (req.method !== 'HEAD') countBytes(req.url, stat.size);
 }
 
 // ---------------------------------------------------------------------------

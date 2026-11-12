@@ -14,6 +14,38 @@
 
 ---
 
+## 精简版：OpenVSCode Server + 全内存管线（更快 / 更省流量）
+
+根目录的 `serve-web` 镜像为 335 MB（压缩），转 wasm 后浏览器首载约 1.1 GB（gzip/zstd 后约 0.36-0.39 GB）。为了把
+启动压到分钟级、下载压到 0.1 GB 级，本仓库另外提供 [`wasm-openvscode/`](../wasm-openvscode/README.md)：
+
+- **更小的输入镜像**：Debian slim + OpenVSCode Server 官方 tarball，压缩后仅 **111 MB**（vs 335 MB）；
+  没有微软 Rust CLI 包装层，guest 里直接由 node server 启动（CLI 是旧方案 9 分钟启动的主要开销）。
+- **全内存管线**（本目录服务端默认开启）：
+  - `--memory`：把 `out.js` / `.wasm` / `.data` 一次性读入 Node 内存，请求期间零磁盘 I/O；
+  - `--compress-data`：启动时在内存里 gzip，浏览器以 `Content-Encoding: gzip` 下载、在内存解压；
+  - 页面与 wasm 运行时都只在内存中工作，不写 IndexedDB / OPFS / 磁盘；
+  - guest 的 rootfs 在 wasm 内存里，`/tmp` 是内存盘（HOME、VS Code 数据、工作区都在 `/tmp`），
+    编辑/终端写入不会落到任何磁盘（刷新页面即恢复初始状态）。
+- **客户端静态资源宿主直出**：`/stable-<commit>/static/...` 由宿主 cache 直接返回，只有动态请求走模拟 guest。
+
+```bash
+cd wasm-demo
+
+# 1) 宿主侧 OpenVSCode 客户端资源（~74 MB，建议）
+./scripts/fetch-openvscode-cache.sh
+
+# 2) 启动（自动下载 wasm 产物 c2w-web-vscode-ovs-wasm + c2w-net）
+./scripts/serve-openvscode.sh
+
+# 3) 打开脚本打印的地址（默认如下），等待容器在浏览器里启动
+#    http://localhost:8092/?net=delegate=ws://127.0.0.1:8889&port=18081
+```
+
+`MEMORY=0` / `COMPRESS_DATA=0` 可以关闭内存模式 / 压缩（用于对比）。
+
+> 实测数据（详见文末「测量记录」）：待补充。
+
 ## 架构
 
 ```text

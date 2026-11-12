@@ -1,5 +1,6 @@
 # runtime data (wasm artifact, page assets copied at serve time, caches)
 htdocs/
+htdocs-openvscode/
 .bin/
 .cache/
 *.log
