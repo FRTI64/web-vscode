@@ -146,7 +146,7 @@ docker run --rm -p 8000:8000 \
 - 一个自动加载页面在浏览器里启动这个 wasm 容器（x86_64 全模拟），容器里跑起 `code serve-web`；
 - 页面通过同源反向代理把容器中的 VS Code 工作台内嵌显示，也可以在新标签页打开 `http://localhost:18080/`。
 
-![VS Code running from a container emulated in WebAssembly](wasm-demo/docs/vscode-in-browser.png)
+![Auto-loader page with VS Code running from a wasm container](wasm-demo/docs/wasm-demo-page.png)
 
 ```bash
 cd wasm-demo

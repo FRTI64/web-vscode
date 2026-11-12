@@ -6,9 +6,11 @@
 - 容器在浏览器里启动 Debian + `entrypoint.sh` + `code serve-web`；
 - 页面通过同源反向代理把容器里 `:8000` 的 VS Code 工作台**内嵌**到本页，也可在新标签页打开 `http://localhost:18080/`。
 
-![VS Code running from a container emulated in WebAssembly](docs/vscode-in-browser.png)
+![Auto-loader page with VS Code embedded from the wasm container](docs/wasm-demo-page.png)
 
-> 截图来自真实运行：GitHub Actions 构建镜像 → 再转换为 wasm → 浏览器加载 → 容器内 `code serve-web` 就绪 → 页面内嵌 VS Code 工作台。
+> 上图为**真实运行截图**（Chrome，2026-11-12）：页面自动加载 1 GB+ 的 wasm 容器，容器内 `code serve-web` 启动后，
+> 页面通过 `/vs/` 同源反向代理把 VS Code 工作台内嵌显示。查看 VS Code 工作台原始截图见
+> [docs/vscode-in-browser.png](docs/vscode-in-browser.png)。
 
 ---
 
@@ -45,7 +47,8 @@
 | 容器引导 | 浏览器内 QEMU 启动后约 **10 秒**看到容器 entrypoint 日志（Debian + tini + entrypoint） |
 | `code serve-web` 就绪 | 约 **8-9 分钟**（x86_64 全模拟下 Node 启动很慢，guest 只有 1 vCPU） |
 | 首个 HTTP 请求 | 50-100 秒，之后约 14-20 秒（TCG JIT 预热后变快） |
-| 内嵌 VS Code | 静态资源从宿主 cache 提供后，工作台 **约 10 秒**加载完成并显示 Explorer/Welcome 页（截图见上） |
+| 内嵌 VS Code | 静态资源从宿主 cache 提供后，首次 `/vs/` 代理请求约 50-60 秒，之后工作台加载完成并显示 Explorer/Welcome/Chat 页（截图见上） |
+| 端到端实测 | 页面加载 → 容器引导 10s → `serve-web` 就绪 **541s** → 内嵌工作台可交互；完整验证记录见 `docs/validation-summary.json` |
 
 > 说明：宿主侧把 VS Code 的静态客户端文件（`out/`、`extensions/`、`resources/` 等，约 738 MB）缓存目录用于直出，只有动态请求走模拟 guest，所以工作台首次渲染很快；否则每个几百 KB 的 JS 都要经过模拟网络，会慢到不可用。
 

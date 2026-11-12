@@ -1,0 +1,20 @@
+{
+  "bootSeconds": 541,
+  "state": {
+    "state": "VS Code 已就绪（serve-web 已启动）",
+    "readyUrl": "http://localhost:18080/",
+    "errors": [],
+    "outLen": 1669,
+    "tail": "rms (https://aka.ms/vscode-server-license) and\r\n\u001b[2m[2026-11-12 09:03:32]\u001b[0m \u001b[35minfo\u001b[0m [6904719 stdout]: * the Microsoft Privacy Statement (https://privacy.microsoft.com/en-US/privacystatement).\r\n\u001b[2m[2026-11-12 09:03:32]\u001b[0m \u001b[35minfo\u001b[0m [6904719 stdout]: *\r\n\u001b[2m[2026-11-12 09:03:33]\u001b[0m \u001b[35minfo\u001b[0m [6904719 stdout]: Server bound to /tmp/code-8ecaff06-0971-4af0-848e-931885ee51fe\r\n\u001b[2m[2026-11-12 09:03:33]\u001b[0m \u001b[35minfo\u001b[0m [6904719 stdout]: Extension host agent listening on /tmp/code-8ecaff06-0971-4af0-848e-931885ee51fe\r\n\u001b[2m[2026-11-12 09:03:33]\u001b[0m \u001b[35minfo\u001b[0m [6904719 stdout]: \r\n"
+  },
+  "iframe": {
+    "loaded": true,
+    "title": "Address - workspace - Visual Studio Code",
+    "workbench": true,
+    "bodyLen": 117527
+  },
+  "errors": [
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+  ],
+  "screenshot": "/home/frti64/frti64_c2w/.local/wasm-test-vscode/final-page.png"
+}
