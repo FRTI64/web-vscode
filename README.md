@@ -39,10 +39,9 @@
 
 ### 方式一：使用 GitHub Actions 构建好的镜像（推荐）
 
-```bash
-# 若 GHCR 包未公开，先登录（PAT 需要 read:packages 权限）
-# echo "$GITHUB_TOKEN" | docker login ghcr.io -u FRTI64 --password-stdin
+镜像已发布到公开的 GHCR，可直接拉取（若之后改为私有包，需 `docker login ghcr.io`，PAT 要带 `read:packages`）：
 
+```bash
 docker run --rm -p 8000:8000 \
   -v "$PWD/workspace:/workspace" \
   ghcr.io/frti64/web-vscode:latest
@@ -94,6 +93,20 @@ PORT=8080 CONNECTION_TOKEN="$(openssl rand -hex 16)" ./scripts/serve-local.sh
 gh workflow run build.yml -R FRTI64/web-vscode
 gh run watch -R FRTI64/web-vscode
 ```
+
+### 构建产物（首次构建已验证通过）
+
+| 项目 | 值 |
+| --- | --- |
+| GitHub Actions | <https://github.com/FRTI64/web-vscode/actions/workflows/build.yml> |
+| GHCR 包（公开） | <https://github.com/FRTI64/web-vscode/pkgs/container/web-vscode> |
+| 镜像 | `ghcr.io/frti64/web-vscode:latest`（另含 `:sha-065efdd`） |
+| manifest digest | `sha256:87331c24ccefec43108c6759ab57fe5d5cc768fe33ebfc51ca15028bf03985c6` |
+| 压缩后大小 | 334.8 MiB（4 层，linux/amd64） |
+| 构建耗时 | 约 1 分 42 秒（含下载 270 MB Web Server 并预热缓存） |
+| 冒烟测试 | HTTP 200 / `text/html` / body 含 `vscode` / 运行用户 `coder`（uid 1000）✅ |
+
+CI 冒烟测试的结果会写入每次 run 的 Job Summary，包含镜像 tag、digest、smoke 结果与 run 链接。
 
 冒烟测试会验证：
 
