@@ -94,19 +94,18 @@ gh workflow run build.yml -R FRTI64/web-vscode
 gh run watch -R FRTI64/web-vscode
 ```
 
-### 构建产物（首次构建已验证通过）
+### 构建产物（已在本仓库的 GitHub Actions 中真实构建并验证）
 
 | 项目 | 值 |
 | --- | --- |
 | GitHub Actions | <https://github.com/FRTI64/web-vscode/actions/workflows/build.yml> |
-| GHCR 包（公开） | <https://github.com/FRTI64/web-vscode/pkgs/container/web-vscode> |
-| 镜像 | `ghcr.io/frti64/web-vscode:latest`（另含 `:sha-065efdd`） |
-| manifest digest | `sha256:87331c24ccefec43108c6759ab57fe5d5cc768fe33ebfc51ca15028bf03985c6` |
+| GHCR 包（公开，可匿名 pull） | <https://github.com/FRTI64/web-vscode/pkgs/container/web-vscode> |
+| 镜像 | `ghcr.io/frti64/web-vscode:latest`（每次构建另有 `:sha-<commit>`，如 `:sha-c688d6f`） |
 | 压缩后大小 | 334.8 MiB（4 层，linux/amd64） |
-| 构建耗时 | 约 1 分 42 秒（含下载 270 MB Web Server 并预热缓存） |
+| 构建耗时 | 首次约 1 分 45 秒（含下载 270 MB Web Server 并预热缓存），之后命中 GHA 缓存约 35 秒 |
 | 冒烟测试 | HTTP 200 / `text/html` / body 含 `vscode` / 运行用户 `coder`（uid 1000）✅ |
 
-CI 冒烟测试的结果会写入每次 run 的 Job Summary，包含镜像 tag、digest、smoke 结果与 run 链接。
+每次构建的 manifest digest 会写入该次 run 的 Job Summary（OCI label 里的 `created` 时间戳每次构建都会变，所以 digest 每次不同）。
 
 冒烟测试会验证：
 
