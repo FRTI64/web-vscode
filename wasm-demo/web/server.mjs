@@ -4,13 +4,21 @@
 //
 //   /                 -> index.html (the auto-loader page)
 //   /__status         -> {"ready": bool} (server-side probe of the guest port)
+//   /__stats          -> traffic counters (bytes served, compressed sizes)
 //   /vs, /vs/...      -> reverse proxy to the guest HTTP server (path rewritten)
 //   /<static file>    -> static file from --root (out.js, .wasm, .data, ...)
+//   /stable-<commit>/static/... -> VS Code client assets from --static-cache
 //   anything else     -> reverse proxy to the guest (VS Code assets use absolute
 //                        root paths, e.g. /stable-<commit>/...)
 //
 // WebSocket upgrades are proxied too, so the VS Code workbench inside an
 // iframe can talk to its server on the same origin.
+//
+// Memory mode (--memory): all artifact files (including the multi-hundred-MB
+// QEMU `.data`) are read into RAM at startup and served from there; nothing is
+// read from disk per request. With --compress-data the data/wasm files are
+// gzip-compressed in RAM once at startup and sent with `Content-Encoding:
+// gzip`, so the browser downloads ~3x fewer bytes and decompresses in memory.
 //
 // The page is served COOP/COEP so the QEMU-Wasm runtime can use
 // SharedArrayBuffer (cross-origin isolation).
@@ -19,23 +27,23 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import url from 'node:url';
+import zlib from 'node:zlib';
 
 const argv = process.argv.slice(2);
+const hasFlag = (name) => argv.includes(`--${name}`);
 const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : fallback;
+  return i !== -1 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : fallback;
 };
+
 const root = path.resolve(opt('root', '.'));
 const port = Number(opt('port', '8090'));
 const host = opt('host', '127.0.0.1');
 const guest = { host: opt('guest-host', '127.0.0.1'), port: Number(opt('guest-port', '18080')) };
-// Optional local copy of the VS Code web server files (the pre-warmed
-// serve-web cache baked into the container image). Serving the big static
-// client assets from the host makes the workbench load fast; only dynamic
-// requests are proxied to the emulated guest.
 const staticCache = opt('static-cache', '');
+const memoryMode = hasFlag('memory');
+const compressData = hasFlag('compress-data');
 const STATIC_RE = /^\/stable-([0-9a-f]{40})\/static\/(.+)$/;
-let cachedShell = null; // { body, headers } for the VS Code index HTML
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -56,11 +64,91 @@ const CROSS_ORIGIN_ISOLATION = {
   'cross-origin-embedder-policy': 'require-corp',
 };
 
-function sendJson(res, code, value) {
-  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-  res.end(JSON.stringify(value));
+const stats = {
+  startedAt: new Date().toISOString(),
+  wireBytes: 0,
+  requests: 0,
+  files: Object.create(null),
+  served: Object.create(null),
+};
+function countBytes(name, n) {
+  stats.wireBytes += n;
+  stats.requests += 1;
+  stats.served[name] = (stats.served[name] || 0) + 1;
+  stats.files[name] = (stats.files[name] || 0) + n;
 }
 
+// ---------------------------------------------------------------------------
+// In-memory artifact store
+// ---------------------------------------------------------------------------
+const memory = new Map(); // url path -> { buf, type, encoding?, originalLength }
+
+function walkFiles(dir, prefix = '') {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...walkFiles(full, rel));
+    else if (entry.isFile()) out.push(rel);
+  }
+  return out;
+}
+
+function preloadMemory() {
+  const wanted = /\.(html|js|mjs|css|wasm|data|json|png|svg|ico)$/;
+  let rawTotal = 0;
+  let wireTotal = 0;
+  for (const rel of walkFiles(root)) {
+    if (!wanted.test(rel)) continue;
+    const file = path.join(root, rel);
+    const stat = fs.statSync(file);
+    if (!stat.isFile()) continue;
+    const buf = fs.readFileSync(file);
+    rawTotal += buf.length;
+    const type = MIME[path.extname(rel)] || 'application/octet-stream';
+    const entry = { buf, type, originalLength: buf.length };
+    // Compress the big payloads (the QEMU .data, the wasm binary, big JS) once.
+    const compressible = /\.(data|wasm|js)$/.test(rel) && buf.length > 64 * 1024;
+    if (compressData && compressible) {
+      const gz = zlib.gzipSync(buf, { level: 4 });
+      if (gz.length < buf.length) {
+        entry.buf = gz;
+        entry.encoding = 'gzip';
+        entry.originalLength = buf.length;
+        wireTotal += gz.length;
+      } else {
+        wireTotal += buf.length;
+      }
+    } else {
+      wireTotal += buf.length;
+    }
+    memory.set('/' + rel.replace(/\\/g, '/'), entry);
+  }
+  console.log(
+    `[server] memory mode: preloaded ${memory.size} files, ${(rawTotal / 1048576).toFixed(1)} MiB in RAM` +
+      (compressData ? `, ${(wireTotal / 1048576).toFixed(1)} MiB on the wire (gzip)` : ''),
+  );
+}
+
+function serveMemory(req, res, entry) {
+  const headers = {
+    'content-type': entry.type,
+    'content-length': entry.buf.length,
+    'cache-control': 'no-store',
+    ...CROSS_ORIGIN_ISOLATION,
+  };
+  if (entry.encoding) {
+    headers['content-encoding'] = entry.encoding;
+    headers['x-original-length'] = String(entry.originalLength);
+  }
+  res.writeHead(200, headers);
+  res.end(entry.buf);
+  countBytes(req.url, entry.buf.length);
+}
+
+// ---------------------------------------------------------------------------
+// Regular disk serving (fallback when not in memory mode)
+// ---------------------------------------------------------------------------
 function sendFile(req, res, file, stat) {
   const type = MIME[path.extname(file)] || 'application/octet-stream';
   const headers = {
@@ -69,28 +157,15 @@ function sendFile(req, res, file, stat) {
     'cache-control': 'no-store',
     ...CROSS_ORIGIN_ISOLATION,
   };
-  // Minimal byte-range support (browsers may request ranges for large files).
-  const range = req.headers.range;
-  if (range) {
-    const m = /^bytes=(\d*)-(\d*)$/.exec(range);
-    if (m) {
-      let start = m[1] === '' ? stat.size - Number(m[2]) : Number(m[1]);
-      let end = m[2] === '' || m[1] === '' ? stat.size - 1 : Number(m[2]);
-      if (start >= 0 && start <= end && end < stat.size) {
-        res.writeHead(206, {
-          ...headers,
-          'content-length': end - start + 1,
-          'content-range': `bytes ${start}-${end}/${stat.size}`,
-          'accept-ranges': 'bytes',
-        });
-        fs.createReadStream(file, { start, end }).pipe(res);
-        return;
-      }
-    }
-  }
-  res.writeHead(200, { ...headers, 'accept-ranges': 'bytes' });
+  res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
+  countBytes(req.url, stat.size);
 }
+
+// ---------------------------------------------------------------------------
+// Guest proxying
+// ---------------------------------------------------------------------------
+let cachedShell = null; // { body, headers } for the VS Code index HTML
 
 function proxyToGuest(req, res, targetPath, { cacheShell = false } = {}) {
   const headers = { ...req.headers, host: `${guest.host}:${guest.port}` };
@@ -118,17 +193,23 @@ function proxyToGuest(req, res, targetPath, { cacheShell = false } = {}) {
               body: Buffer.concat(chunks),
               headers: { ...pres.headers, ...CROSS_ORIGIN_ISOLATION, 'cache-control': 'no-store' },
             };
-            console.log('[server] cached VS Code shell HTML (' + size + ' bytes)');
+            console.log(`[server] cached VS Code shell HTML (${size} bytes)`);
           }
           res.end();
+          countBytes(req.url, size);
         });
         pres.on('error', () => res.destroy());
         return;
       }
+      let received = 0;
+      pres.on('data', (c) => {
+        received += c.length;
+      });
+      pres.on('end', () => countBytes(req.url, received));
       pres.pipe(res);
     },
   );
-  preq.setTimeout(120000, () => preq.destroy(new Error('guest request timeout')));
+  preq.setTimeout(180000, () => preq.destroy(new Error('guest request timeout')));
   preq.on('error', (err) => {
     if (!res.headersSent) {
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', ...CROSS_ORIGIN_ISOLATION });
@@ -144,36 +225,50 @@ const probeGuest = () =>
       resolve({ ready: r.statusCode === 200, status: r.statusCode });
       r.resume();
     });
-    g.on('timeout', () => { g.destroy(); resolve({ ready: false, status: 'timeout' }); });
+    g.on('timeout', () => {
+      g.destroy();
+      resolve({ ready: false, status: 'timeout' });
+    });
     g.on('error', () => resolve({ ready: false }));
   });
 
+function sendJson(res, code, value) {
+  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(value));
+}
+
+// ---------------------------------------------------------------------------
+// HTTP server
+// ---------------------------------------------------------------------------
 const server = http.createServer((req, res) => {
   const parsed = url.parse(req.url);
   let pathname = decodeURIComponent(parsed.pathname || '/');
 
+  if (pathname === '/__status') {
+    probeGuest().then((st) => sendJson(res, 200, st));
+    return;
+  }
+  if (pathname === '/__stats') {
+    sendJson(res, 200, stats);
+    return;
+  }
+
+  // VS Code client static assets from the local cache (fast path + fewer bytes
+  // through the emulated guest).
   if (staticCache) {
     const m = STATIC_RE.exec(pathname);
     if (m) {
-      const rel = decodeURIComponent(m[2]).replace(/\0/g, '');
-      const file = path.join(staticCache, path.normalize(rel));
+      const file = path.join(staticCache, path.normalize(decodeURIComponent(m[2])));
       if (file.startsWith(staticCache + path.sep)) {
         fs.stat(file, (err, st) => {
-          if (!err && st.isFile()) {
-            sendFile(req, res, file, st);
-            return;
-          }
-          proxyToGuest(req, res, req.url);
+          if (!err && st.isFile()) sendFile(req, res, file, st);
+          else proxyToGuest(req, res, req.url);
         });
         return;
       }
     }
   }
 
-  if (pathname === '/__status') {
-    probeGuest().then((st) => sendJson(res, 200, st));
-    return;
-  }
   if (pathname === '/vs') {
     res.writeHead(302, { location: '/vs/' }).end();
     return;
@@ -182,29 +277,37 @@ const server = http.createServer((req, res) => {
     if (cachedShell) {
       res.writeHead(200, cachedShell.headers);
       res.end(cachedShell.body);
+      countBytes('/vs/', cachedShell.body.length);
       return;
     }
     proxyToGuest(req, res, '/', { cacheShell: true });
     return;
   }
   if (pathname.startsWith('/vs/')) {
-    // Rewrite the iframe prefix away: /vs/<x> -> /<x>
-    const rest = req.url.slice(3) || '/';
-    proxyToGuest(req, res, rest);
+    proxyToGuest(req, res, req.url.slice(3) || '/');
     return;
   }
 
+  // Memory mode: serve artifact/page files from RAM.
+  if (memoryMode) {
+    const key = pathname.endsWith('/') ? pathname + 'index.html' : pathname;
+    const entry = memory.get(key);
+    if (entry) {
+      serveMemory(req, res, entry);
+      return;
+    }
+    // Unknown path: VS Code absolute asset URLs -> guest.
+    proxyToGuest(req, res, req.url);
+    return;
+  }
+
+  // Disk mode.
   if (pathname.endsWith('/')) pathname += 'index.html';
   const file = path.join(root, path.normalize(pathname));
-  const insideRoot = file.startsWith(root + path.sep);
-  if (insideRoot) {
+  if (file.startsWith(root + path.sep)) {
     fs.stat(file, (err, st) => {
-      if (!err && st.isFile()) {
-        sendFile(req, res, file, st);
-        return;
-      }
-      // Not a local static file: fall through to the guest (VS Code assets).
-      proxyToGuest(req, res, req.url);
+      if (!err && st.isFile()) sendFile(req, res, file, st);
+      else proxyToGuest(req, res, req.url);
     });
     return;
   }
@@ -229,9 +332,12 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => upstream.destroy());
 });
 
+if (memoryMode) preloadMemory();
+
 server.listen(port, host, () => {
   console.log(`[server] page:  http://${host}:${port}/`);
   console.log(`[server] guest: http://${guest.host}:${guest.port}/ (proxied at /vs/)`);
   console.log(`[server] root:  ${root}`);
+  console.log(`[server] mode:  ${memoryMode ? 'in-memory' : 'disk'}${compressData ? ' + gzip wire compression' : ''}`);
   if (staticCache) console.log(`[server] static cache: ${staticCache}`);
 });

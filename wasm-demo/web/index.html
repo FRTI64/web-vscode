@@ -68,6 +68,7 @@
     rawOutput: '',
     readyUrl: null,
     openUrl: null,
+    stats: null,
     errors: [],
     startedAt: Date.now(),
   };
@@ -120,6 +121,20 @@ function markReady(how) {
   // still open the directly forwarded port in a new tab.
   const hint = document.getElementById('hint');
   if (hint) hint.textContent = 'VS Code 已启动并内嵌在本页；如果下方一片空白，请点击右上角「打开 VS Code」在新标签页访问。页面刷新会重启容器。';
+  // Report the in-memory / compressed traffic (served by the Node sidecar).
+  fetch('/__stats', { cache: 'no-store' })
+    .then((r) => r.json())
+    .then((st) => {
+      app.stats = st;
+      const mb = (st.wireBytes / 1048576).toFixed(1);
+      const dataMb = ((st.files && (st.files['/qemu-system-x86_64.data'] || 0)) / 1048576).toFixed(1);
+      if (hint) {
+        hint.textContent =
+          `VS Code 已启动并内嵌在本页。首次加载流量 ≈ ${mb} MB（其中容器镜像 ${dataMb} MB，gzip 压缩后在浏览器内解压、全程驻留内存）；` +
+          '如果下方一片空白，请点击右上角「打开 VS Code」在新标签页访问。页面刷新会重启容器。';
+      }
+    })
+    .catch(() => {});
   vscodeFrame.src = '/vs/';
   vscodeWrap.classList.remove('hidden');
   terminalWrap.classList.add('hidden');
@@ -174,9 +189,9 @@ function scanBootProgress() {
   if (/Tini|tini|entrypoint|code serve-web/i.test(out)) setStatus('容器启动中：正在启动 VS Code Server…', 70);
   if (/Linux version/.test(out)) setStatus('Linux 内核已启动，正在运行容器…', 55);
   if (/Web UI available at/.test(out)) setStatus('VS Code Server 正在启动…', 80);
-  if (/Server bound to/.test(out) && !app.readyUrl) {
+  if ((/Server bound to/.test(out) || /Web UI available at/.test(out)) && !app.readyUrl) {
     setStatus('VS Code Server 已启动，等待端口转发…', 95);
-    setTimeout(() => markReady('serve-web 已启动'), 1500);
+    setTimeout(() => markReady('serve-web 已启动'), 2000);
   }
 }
 

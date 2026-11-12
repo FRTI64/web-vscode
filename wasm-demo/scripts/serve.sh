@@ -22,6 +22,9 @@
 #   GUEST_PORT     host port forwarded to guest :8000   (default: 18080)
 #   WS_PORT        c2w-net WebSocket port used by the wasm container (8888)
 #   IMAGE_DIR      directory with out.js/.wasm/.data    (default: <repo>/htdocs)
+#   MEMORY         load artifacts into RAM and serve from memory (default: 1)
+#   COMPRESS_DATA  gzip the big files for the wire, decompress in browser
+#                  (default: 1; reduces the initial download ~3x)
 #   STATIC_CACHE   optional local copy of the VS Code web-server files
 #                  (default: <repo>/.cache/serve-web/<commit>; see
 #                  scripts/fetch-static-cache.sh — makes the workbench load
@@ -48,6 +51,8 @@ C2W_COMMIT="69047191fc427f2f92828279aae1d90d8eeda7ab"
 STATIC_CACHE=${STATIC_CACHE:-$ROOT/.cache/serve-web/$C2W_COMMIT}
 ARTIFACT_REPO=${ARTIFACT_REPO:-FRTI64/frti64_c2w}
 ARTIFACT_NAME=${ARTIFACT_NAME:-c2w-web-vscode-wasm}
+MEMORY=${MEMORY:-1}
+COMPRESS_DATA=${COMPRESS_DATA:-1}
 
 log() { printf '[wasm-demo] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
@@ -135,13 +140,15 @@ log "c2w-net: $C2W_NET_BIN"
 # 4. start helper processes
 # ---------------------------------------------------------------------------
 server_args=(--root "$IMAGE_DIR" --port "$PAGE_PORT" --guest-port "$GUEST_PORT")
-if [ -x "$STATIC_CACHE/bin/code-server" ]; then
+[ "$MEMORY" = "1" ] && server_args+=(--memory)
+[ "$COMPRESS_DATA" = "1" ] && server_args+=(--compress-data)
+if [ -f "$STATIC_CACHE/product.json" ]; then
   server_args+=(--static-cache "$STATIC_CACHE")
   log "static asset cache: $STATIC_CACHE (VS Code client loads from host)"
 else
   log "no static asset cache at $STATIC_CACHE — VS Code client assets will be served"
   log "  through the emulated guest and load much slower. Run"
-  log "  ./scripts/fetch-static-cache.sh once (downloads ~270 MB) to speed this up."
+  log "  ./scripts/fetch-static-cache.sh (or ./scripts/fetch-openvscode-cache.sh) once."
 fi
 
 PIDS=()
@@ -163,11 +170,13 @@ node "$ROOT/web/server.mjs" "${server_args[@]}" >"$ROOT/server.log" 2>&1 &
 PIDS+=($!)
 sleep 1
 kill -0 "${PIDS[(-1)]}" 2>/dev/null || die "web server failed to start (see $ROOT/server.log)"
-log "page server: http://localhost:${PAGE_PORT}/"
+PAGE_QUERY="?net=delegate=ws://127.0.0.1:${WS_PORT}&port=${GUEST_PORT}"
+log "page server: http://localhost:${PAGE_PORT}/${PAGE_QUERY}"
 echo
-echo "  打开页面：      http://localhost:${PAGE_PORT}/"
+echo "  打开页面：      http://localhost:${PAGE_PORT}/${PAGE_QUERY}"
 echo "  直接访问 VS Code（服务就绪后）： http://localhost:${GUEST_PORT}/"
-echo "  首次启动需要在浏览器里引导 wasm 容器，约 8-10 分钟。按 Ctrl-C 停止。"
+echo "  模式：${MEMORY:+in-memory }${COMPRESS_DATA:++ gzip wire compression}"
+echo "  首次启动需要在浏览器里引导 wasm 容器，几分钟（取决于镜像大小）。按 Ctrl-C 停止。"
 echo
 
 wait
