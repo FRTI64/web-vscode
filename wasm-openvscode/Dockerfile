@@ -28,8 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PORT=8000 \
     HOST=0.0.0.0 \
     SERVER_DATA_DIR=/tmp/openvscode-data \
-    DEFAULT_FOLDER=/tmp/workspace \
-    TMPDIR=/tmp/coder-tmp
+    DEFAULT_FOLDER=/tmp/workspace
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
